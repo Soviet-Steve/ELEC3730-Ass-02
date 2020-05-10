@@ -105,6 +105,7 @@ int main(void)
   MX_TIM4_Init();
   MX_I2C1_Init();
   MX_I2S2_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   // STEPIEN: Call the user code (never returns)
   //

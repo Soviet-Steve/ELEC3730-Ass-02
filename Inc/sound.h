@@ -1,1 +1,1 @@
-const unsigned char inarSound[];
+const unsigned char inarSound[8192];

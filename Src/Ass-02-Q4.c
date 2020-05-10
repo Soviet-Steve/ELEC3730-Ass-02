@@ -8,7 +8,7 @@
 #include "adc.h"
 #include "sound.h"
 
-// #define HEADPHONE
+#define HEADPHONE
 
 #ifdef HEADPHONE
   #include "headphoneDriver.h"
@@ -74,7 +74,7 @@ enButton fnenDebounce(void){
    // printf("Button is not pressed\n");
     inButton = -1;
   }
-  inHistory += (20 * inButton) - (10 * inPrevState);
+  inHistory += (30 * inButton) - (10 * inPrevState);
   // printf("%d\n", inHistory);
   if(inHistory >= 100){
     inHistory = 100; // To prevent wrap around
@@ -90,29 +90,29 @@ enButton fnenDebounce(void){
   return enState;
 }
 
+TIM_OC_InitTypeDef strPwm; // Stores all the information about the pwm to "input" into the pwm function
+
+
 void fnPwmIdle(void){
     //HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, SET);
     //return;
-
-    TIM_OC_InitTypeDef strPwm; // Stores all the information about the pwm to "input" into the pwm function
     strPwm.OCMode = TIM_OCMODE_PWM1; // Set pwm mode to 1
     strPwm.OCPolarity = TIM_OCPOLARITY_HIGH; // Non inverted pwm
     strPwm.OCFastMode = TIM_OCFAST_DISABLE; // Fast mode??
     fnvdStopGrind();
-    static uint16_t level = 0; // The code for the pwm "waving" comes from the waveshare pwm example
-    static uint8_t increament = 100;
-    if(level == 100){
-      increament = -1;
-    }
-    if(level == 0){
-      increament = 1;
-    }
-    level++;
+    static uint16_t level = 1; // The code for the pwm "waving" comes from the waveshare pwm example
+    static int8_t increament = 1;
+    level = abs(++increament);
     strPwm.Pulse = level;
     HAL_TIM_PWM_ConfigChannel(&htim4, &strPwm, TIM_CHANNEL_4); // "Uploads the information into a temp register
     HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4); // Moves that temp register forward
 }
 
+void fnvdBlueOff(void){
+  strPwm.Pulse = 0;
+  HAL_TIM_PWM_ConfigChannel(&htim4, &strPwm, TIM_CHANNEL_4);
+     HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+}
 
 uint8_t fninReadADC(void){
   HAL_ADC_Start(&hadc1);
@@ -123,9 +123,8 @@ uint8_t fninReadADC(void){
 }
 
 enGrind fnenGrind(const uint8_t inGrindTime){
-  static uint8_t inCurrentTime = 0;
-  if((inCurrentTime) < (inGrindTime * 1000) ){
-    fnvdStartGrind();
+  static uint32_t inCurrentTime = 0;
+  if((inCurrentTime) < (inGrindTime * 100) ){
     HAL_Delay(1);
     inCurrentTime++;
     return notFinished;
@@ -141,6 +140,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){ // Novel Extension -- Safety Swi
   enState = Safe;
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, RESET); // Turn off the green LED
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, SET); // Turn on redled
+  fnvdBlueOff();
   fnvdStopGrind();
 }
 
@@ -167,10 +167,10 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef *htim)
 
 
 void Ass_02_question (){
-#ifdef HEADPHONES
+#ifdef HEADPHONE
   fnvdSetup1380();
   fnvd1380outOn();
-  HAL_I2S_Transmit_DMA(&hi2s2, (uint32_t *)&inarsound, 8192); // Has to be cast to a 16 bit int
+  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)&inarSound, 8192); // Has to be cast to a 16 bit int
   HAL_I2S_DMAPause(&hi2s2);
 #else
    HAL_DAC_Init(&hdac); // Start the dac interface
@@ -188,7 +188,7 @@ void Ass_02_question (){
     // Wait for next loop
     if (start_loop == 1)
     {
-      // printf ("WARNING: Loop time exceeded\n");
+      printf ("WARNING: Loop time exceeded\n");
     }
     wait_count = 0;
     while (start_loop == 0)
@@ -206,36 +206,38 @@ void Ass_02_question (){
       wait_count_min = wait_count;
 
     // **** START COFFEE GRINDER MAIN LOOP CODE ****
-#ifdef HEADPHONES
+#ifdef HEADPHONE
   fnvd1380setBothChannelVol(255); // This can be changed with a pot value if the end user wants it
 #endif
     switch(enState){
       case Safe: // Don't have to worry about bouncing, because the interrupt will still take it back to this state
         if(HAL_GPIO_ReadPin(GPIOC, JOY_CTR_Pin) == 1){
           enState = Idle;
-          printf("Going into Idle State\n");
+         // printf("Going into Idle State\n");
           HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, RESET);
         }
         break;
       case Idle:
         fnPwmIdle();
         if(fnenDebounce() == Pressed){
-           inGrindSeconds = fninReadADC();
-           printf("Going into GrindSet State\n");
-           printf("inGrindSeconds: %d\n", inGrindSeconds);
-           enState = GrindSet;
+          fnvdBlueOff();
+          inGrindSeconds = fninReadADC();
+         // printf("Going into GrindSet State\n");
+         // printf("inGrindSeconds: %d\n", inGrindSeconds);
+          enState = GrindSet;
         }
         break;
       case GrindSet:
         if(fnenDebounce() == notPressed){
-          printf("Going into Grind State\n");
+         // printf("Going into Grind State\n");
           enState = Grind;
+          fnvdStartGrind();
         }
         break;
       case Grind:
         if(fnenGrind(inGrindSeconds) == notFinished){
           if(fnenDebounce() == Pressed){
-            printf("Going into PauseSet State\n");
+           // printf("Going into PauseSet State\n");
             enState = PauseSet;
           }
         }else{
@@ -247,14 +249,14 @@ void Ass_02_question (){
         fnvdStopGrind();
         HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, SET); // Turn on the green LED
         if(fnenDebounce() == notPressed){
-          printf("Going into Pause State\n");
+         // printf("Going into Pause State\n");
           enState = Pause;
         }
         break;
       case Pause:
         if(fnenDebounce() == Pressed){
          HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, RESET); // Turn off the green LED
-         printf("Going into GrindSet State\n");
+        // printf("Going into GrindSet State\n");
          enState = GrindSet;
         }
         break;
