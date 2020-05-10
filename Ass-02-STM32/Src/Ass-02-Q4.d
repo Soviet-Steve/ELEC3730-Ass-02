@@ -39,9 +39,7 @@ Src/Ass-02-Q4.o: ../Src/Ass-02-Q4.c ../Src/Ass-02.h \
  C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/tim.h \
  C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/adc.h \
  C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/sound.h \
- C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/headphoneDriver.h \
- C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/i2c.h \
- C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/i2s.h
+ C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/dac.h
 
 ../Src/Ass-02.h:
 
@@ -125,8 +123,4 @@ C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/adc.h:
 
 C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/sound.h:
 
-C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/headphoneDriver.h:
-
-C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/i2c.h:
-
-C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/i2s.h:
+C:/Users/benja/Documents/year2/sem1/elec3730/Ass-02/Inc/dac.h:

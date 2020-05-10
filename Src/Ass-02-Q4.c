@@ -8,7 +8,7 @@
 #include "adc.h"
 #include "sound.h"
 
-#define HEADPHONE
+// #define HEADPHONE
 
 #ifdef HEADPHONE
   #include "headphoneDriver.h"
@@ -56,7 +56,7 @@ void fnvdStopGrind(void){
 }
 
 void fnvdStartGrind(void){
-  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t *)&inarSound, 8192, DAC_ALIGN_8B_R);
+  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t *)&inarSound, 8192, DAC_ALIGN_12B_R);
   return;
 }
 #endif
@@ -125,8 +125,10 @@ uint8_t fninReadADC(void){
 enGrind fnenGrind(const uint8_t inGrindTime){
   static uint32_t inCurrentTime = 0;
   if((inCurrentTime) < (inGrindTime * 100) ){
+    fnvdStartGrind();
     HAL_Delay(1);
     inCurrentTime++;
+    fnvdStopGrind(); // Always "stop the grind", because the grind will start again by the time it loops back around
     return notFinished;
   }
   inCurrentTime = 0;
@@ -136,7 +138,7 @@ enGrind fnenGrind(const uint8_t inGrindTime){
 
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){ // Novel Extension -- Safety Switch
-  printf("Going into Safe State\n");
+  //printf("Going into Safe State\n");
   enState = Safe;
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, RESET); // Turn off the green LED
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, SET); // Turn on redled
@@ -174,6 +176,7 @@ void Ass_02_question (){
   HAL_I2S_DMAPause(&hi2s2);
 #else
    HAL_DAC_Init(&hdac); // Start the dac interface
+   HAL_TIM_Base_Start(&htim2);
 #endif
   uint8_t inGrindSeconds = 0;
   // Initialise the timer and start running
@@ -231,7 +234,7 @@ void Ass_02_question (){
         if(fnenDebounce() == notPressed){
          // printf("Going into Grind State\n");
           enState = Grind;
-          fnvdStartGrind();
+
         }
         break;
       case Grind:
@@ -243,7 +246,7 @@ void Ass_02_question (){
         }else{
           enState = Idle;
         }
-        fnvdStopGrind(); // Always "stop the grind", because the grind will start again by the time it loops back around
+
         break;
       case PauseSet: // This prevents it from skipping the pause;
         fnvdStopGrind();
