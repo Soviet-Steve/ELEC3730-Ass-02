@@ -234,7 +234,7 @@ void Ass_02_question (){
         if(fnenDebounce() == notPressed){
          // printf("Going into Grind State\n");
           enState = Grind;
-
+          // fnStartGrind();
         }
         break;
       case Grind:
@@ -244,12 +244,13 @@ void Ass_02_question (){
             enState = PauseSet;
           }
         }else{
+          // fnvdStopGrind();
           enState = Idle;
         }
 
         break;
       case PauseSet: // This prevents it from skipping the pause;
-        fnvdStopGrind();
+        // fnvdStopGrind();
         HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, SET); // Turn on the green LED
         if(fnenDebounce() == notPressed){
          // printf("Going into Pause State\n");
