@@ -39,6 +39,14 @@ typedef enum tenGrind{
   notFinished = 0
 } enGrind;
 
+volatile struct tstrTimerInfo{
+  uint16_t inMicroSecond;
+  uint16_t inMilliSecond;
+  uint16_t inSecond;
+  uint8_t inGrinderTime;
+  uint8_t inPauseTime;
+} strRealTimer;
+
 #ifdef HEADPHONE
 void fnvdStopGrind(void){
   HAL_I2S_DMAPause(&hi2s2);
@@ -51,12 +59,14 @@ void fnvdStartGrind(void){
 }
 #else
 void fnvdStopGrind(void){
+  HAL_GPIO_WritePin(GPIOD, LD3_Pin, RESET);
   HAL_DAC_Stop_DMA(&hdac, DAC_CHANNEL_1);
   return;
 }
 
 void fnvdStartGrind(void){
-  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t *)&inarSound, 8192, DAC_ALIGN_12B_R);
+  HAL_GPIO_WritePin(GPIOD, LD3_Pin, SET);
+  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t *)&inarSound, 128, DAC_ALIGN_12B_R);
   return;
 }
 #endif
@@ -64,9 +74,10 @@ void fnvdStartGrind(void){
 
 
 enButton fnenDebounce(void){
-  static int8_t inButton = 0, inHistory = 0, inPrevState = 0;
+  static int8_t inButton = 0, inPrevState = 0;
+  static int64_t inHistory = 0;
   static enButton enState = notPressed;
-  HAL_Delay(1); // While it adds a delay, 10ms of lag is acceptable (replace with osDelay in the future?)
+ // HAL_Delay(1);
   if(HAL_GPIO_ReadPin(BLUE_BUTTON_GPIO_Port, BLUE_BUTTON_Pin) == 1){
    // printf("Button is pressed\n");
     inButton = 1;
@@ -101,8 +112,11 @@ void fnPwmIdle(void){
     strPwm.OCFastMode = TIM_OCFAST_DISABLE; // Fast mode??
     fnvdStopGrind();
     static uint16_t level = 1; // The code for the pwm "waving" comes from the waveshare pwm example
-    static int8_t increament = 1;
-    level = abs(++increament);
+    static int16_t increament = 1;
+    if(increament >= 2048){
+      increament = -increament;
+    }
+    level = abs(increament += 8);
     strPwm.Pulse = level;
     HAL_TIM_PWM_ConfigChannel(&htim4, &strPwm, TIM_CHANNEL_4); // "Uploads the information into a temp register
     HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4); // Moves that temp register forward
@@ -111,31 +125,44 @@ void fnPwmIdle(void){
 void fnvdBlueOff(void){
   strPwm.Pulse = 0;
   HAL_TIM_PWM_ConfigChannel(&htim4, &strPwm, TIM_CHANNEL_4);
-     HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
 }
 
 uint8_t fninReadADC(void){
   HAL_ADC_Start(&hadc1);
   if(HAL_ADC_PollForConversion(&hadc1, 8) == HAL_OK){ // Polling timeout only 8ms, if the ADC isn't ready at this stage, timing problems occur
-    return (uint8_t)((HAL_ADC_GetValue(&hadc1) / 136) + 10); // Returns a number beteewn 10 and 40 for coffee grind duration
+    return ((HAL_ADC_GetValue(&hadc1) / 25) + 5); // Returns a number beteewn 10 and 40 for coffee grind duration
   }
   return 0; // Null coffee grind time
 }
 
-enGrind fnenGrind(const uint8_t inGrindTime){
-  static uint32_t inCurrentTime = 0;
-  if((inCurrentTime) < (inGrindTime * 100) ){
-    fnvdStartGrind();
-    HAL_Delay(1);
-    inCurrentTime++;
-    fnvdStopGrind(); // Always "stop the grind", because the grind will start again by the time it loops back around
+enGrind fnenGrind(void){
+  if(strRealTimer.inMilliSecond == 0){
+    strRealTimer.inGrinderTime--;
+  }
+  if(strRealTimer.inGrinderTime > 0){
     return notFinished;
   }
-  inCurrentTime = 0;
   return Finished;
 }
 
+void fnvdKill(void){
+  fnvdStopGrind();
+  fnvdBlueOff();
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, RESET); // Turn off the green LED
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, RESET);
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, RESET);
+}
 
+void fnvdPauseTime(void){
+  if(strRealTimer.inMilliSecond == 0){
+    strRealTimer.inPauseTime--;
+  }
+  if(strRealTimer.inPauseTime <= 0){
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, RESET); // Turn off the green LED
+    enState = Idle;
+  }
+}
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){ // Novel Extension -- Safety Switch
   //printf("Going into Safe State\n");
@@ -164,7 +191,15 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef *htim)
     // printf("INFO: TIM3 Callback function\n");
     start_loop = 1;
   }
+  strRealTimer.inMilliSecond += 10;
+  if(strRealTimer.inMilliSecond == 1000){
+    //printf("%d\n", strRealTimer.inPauseTime);
+    //strRealTimer.inPauseTime--;
+    strRealTimer.inMilliSecond = 0;
+    strRealTimer.inSecond++;
+  }
 }
+
 
 
 
@@ -172,12 +207,15 @@ void Ass_02_question (){
 #ifdef HEADPHONE
   fnvdSetup1380();
   fnvd1380outOn();
-  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)&inarSound, 8192); // Has to be cast to a 16 bit int
+  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)&inarSound, 128); // Has to be cast to a 16 bit int
   HAL_I2S_DMAPause(&hi2s2);
 #else
    HAL_DAC_Init(&hdac); // Start the dac interface
    HAL_TIM_Base_Start(&htim2);
 #endif
+  strRealTimer.inSecond = 0;
+  strRealTimer.inMilliSecond = 0;
+  strRealTimer.inSecond = 0;
   uint8_t inGrindSeconds = 0;
   // Initialise the timer and start running
   HAL_TIM_Base_Start_IT(&htim3);
@@ -216,17 +254,18 @@ void Ass_02_question (){
       case Safe: // Don't have to worry about bouncing, because the interrupt will still take it back to this state
         if(HAL_GPIO_ReadPin(GPIOC, JOY_CTR_Pin) == 1){
           enState = Idle;
-         // printf("Going into Idle State\n");
+          // printf("Going into Idle State\n");
           HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, RESET);
         }
         break;
       case Idle:
+        strRealTimer.inPauseTime = 0;
         fnPwmIdle();
         if(fnenDebounce() == Pressed){
           fnvdBlueOff();
-          inGrindSeconds = fninReadADC();
+          strRealTimer.inGrinderTime = fninReadADC();
          // printf("Going into GrindSet State\n");
-         // printf("inGrindSeconds: %d\n", inGrindSeconds);
+        // printf("inGrindSeconds: %d\n", strRealTimer.inGrinderTime);
           enState = GrindSet;
         }
         break;
@@ -234,32 +273,35 @@ void Ass_02_question (){
         if(fnenDebounce() == notPressed){
          // printf("Going into Grind State\n");
           enState = Grind;
-          // fnStartGrind();
+          fnvdStartGrind();
         }
         break;
       case Grind:
-        if(fnenGrind(inGrindSeconds) == notFinished){
+        if(fnenGrind() == notFinished){
           if(fnenDebounce() == Pressed){
            // printf("Going into PauseSet State\n");
             enState = PauseSet;
           }
         }else{
-          // fnvdStopGrind();
+          fnvdStopGrind();
           enState = Idle;
         }
 
         break;
       case PauseSet: // This prevents it from skipping the pause;
-        // fnvdStopGrind();
+        fnvdStopGrind();
         HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, SET); // Turn on the green LED
         if(fnenDebounce() == notPressed){
-         // printf("Going into Pause State\n");
+          //printf("Going into Pause State\n");
+          strRealTimer.inPauseTime = 20;
           enState = Pause;
         }
         break;
       case Pause:
+        // printf("%d\n", strRealTimer.inPauseTime);
+        fnvdPauseTime();
         if(fnenDebounce() == Pressed){
-         HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, RESET); // Turn off the green LED
+         HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, RESET); // Turn off the green LED         
         // printf("Going into GrindSet State\n");
          enState = GrindSet;
         }
@@ -267,7 +309,7 @@ void Ass_02_question (){
     }
     // ****  END COFFEE GRINDER MAIN LOOP CODE ****
   }
-
+  fnvdKill();
   // Print performance information
   printf("INFO: loop_count     = %ld (%fs)\n", loop_count, (float)loop_count*(float)TIMER_PERIOD/1000.0);
   printf("INFO: wait_count_max = %ld\n", wait_count_max);
